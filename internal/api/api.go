@@ -1,0 +1,139 @@
+// Package api is the CLI's client for the Plexivo Platform API.
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// DefaultURL is the Platform API; PLEXIVO_API_URL overrides it.
+const DefaultURL = "https://api.plexivo.io"
+
+// Client calls the API with one API key.
+type Client struct {
+	URL   string
+	Token string
+	HTTP  *http.Client
+}
+
+// Config is what `plexivo login` stores (~/.config/plexivo/config.json, 0600).
+type Config struct {
+	Token string `json:"token"`
+	URL   string `json:"url,omitempty"`
+}
+
+// ConfigPath is where the CLI keeps its login.
+func ConfigPath() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		dir = filepath.Join(os.Getenv("HOME"), ".config")
+	}
+	return filepath.Join(dir, "plexivo", "config.json")
+}
+
+// Load reads the login, preferring PLEXIVO_TOKEN and PLEXIVO_API_URL.
+func Load() (*Client, error) {
+	var cfg Config
+	if b, err := os.ReadFile(ConfigPath()); err == nil {
+		_ = json.Unmarshal(b, &cfg)
+	}
+	if t := os.Getenv("PLEXIVO_TOKEN"); t != "" {
+		cfg.Token = t
+	}
+	if u := os.Getenv("PLEXIVO_API_URL"); u != "" {
+		cfg.URL = u
+	}
+	if cfg.URL == "" {
+		cfg.URL = DefaultURL
+	}
+	if cfg.Token == "" {
+		return nil, errors.New("not logged in: run `plexivo login` or set PLEXIVO_TOKEN")
+	}
+	return &Client{URL: strings.TrimSuffix(cfg.URL, "/"), Token: cfg.Token, HTTP: &http.Client{Timeout: 30 * time.Second}}, nil
+}
+
+// Save stores a login with owner-only permissions.
+func Save(cfg Config) error {
+	p := ConfigPath()
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(cfg, "", "  ")
+	return os.WriteFile(p, b, 0o600)
+}
+
+// Do sends a request and decodes the JSON answer into out (when not nil).
+func (c *Client) Do(method, path string, body, out any) error {
+	var rd io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		rd = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, c.URL+"/api/v1"+path, rd)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "plexivo-cli")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if resp.StatusCode >= 300 {
+		var e struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(raw, &e)
+		msg := e.Error.Message
+		if msg == "" {
+			msg = e.Message
+		}
+		if msg == "" {
+			msg = strings.TrimSpace(string(raw))
+		}
+		return fmt.Errorf("%s %s: %d %s", method, path, resp.StatusCode, msg)
+	}
+	if out != nil {
+		return json.Unmarshal(raw, out)
+	}
+	return nil
+}
+
+// Tunnel is a grant from POST /deployments/:id/tunnel.
+type Tunnel struct {
+	Host         string   `json:"host"`
+	Port         int      `json:"port"`
+	Token        string   `json:"token"`
+	ExpiresAt    int64    `json:"expires_at"`
+	Fingerprints []string `json:"fingerprints"`
+	Engine       string   `json:"engine"`
+	LocalPort    int      `json:"local_port"`
+}
+
+// NewTunnel asks the Brain for a tunnel to a database or cache.
+func (c *Client) NewTunnel(deploymentID string) (*Tunnel, error) {
+	var out struct {
+		Tunnel Tunnel `json:"tunnel"`
+	}
+	if err := c.Do("POST", "/deployments/"+deploymentID+"/tunnel", map[string]any{}, &out); err != nil {
+		return nil, err
+	}
+	return &out.Tunnel, nil
+}
