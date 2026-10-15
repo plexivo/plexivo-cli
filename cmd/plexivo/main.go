@@ -3,7 +3,7 @@
 //	plexivo login                 store an API key (Console → Settings → API keys)
 //	plexivo logout
 //	plexivo db list               your databases and caches
-//	plexivo db connect <id>       a local port to a database, private or public
+//	plexivo db connect <name|id>  a local port to a database, private or public
 //	plexivo version
 package main
 
@@ -73,7 +73,7 @@ func usage() {
   plexivo login                 store an API key (Console → Settings → API keys)
   plexivo logout                forget it
   plexivo db list               your databases and caches
-  plexivo db connect <id>       open a local port to a database or cache,
+  plexivo db connect <name|id>  open a local port to a database or cache,
                                 even a private one: --port N to choose the port
   plexivo version
 
@@ -127,6 +127,26 @@ func dbList() error {
 	if err != nil {
 		return err
 	}
+	all, org, err := databases(c)
+	if err != nil {
+		return err
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tNAME\tENGINE\tSTATUS\tACCESS\tORGANISATION")
+	for _, d := range all {
+		access := "public"
+		if a, _ := d.Spec["access"].(string); a == "private" {
+			access = "private"
+		} else if ips, _ := d.Spec["trusted_ips"].([]any); len(ips) > 0 {
+			access = fmt.Sprintf("trusted IPs (%d)", len(ips))
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", d.ID, d.Name, engineName(d.Type), d.Status, access, org[d.ID])
+	}
+	return w.Flush()
+}
+
+// databases lists every database and cache the key can see.
+func databases(c *api.Client) ([]deployment, map[string]string, error) {
 	var ts struct {
 		Tenants []struct {
 			ID   string `json:"id"`
@@ -134,31 +154,50 @@ func dbList() error {
 		} `json:"tenants"`
 	}
 	if err := c.Do("GET", "/tenants", nil, &ts); err != nil {
-		return err
+		return nil, nil, err
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tNAME\tENGINE\tSTATUS\tACCESS\tORGANISATION")
+	var all []deployment
+	org := map[string]string{}
 	for _, t := range ts.Tenants {
 		var ds struct {
 			Deployments []deployment `json:"deployments"`
 		}
 		if err := c.Do("GET", "/tenants/"+t.ID+"/deployments", nil, &ds); err != nil {
-			return err
+			return nil, nil, err
 		}
 		for _, d := range ds.Deployments {
-			if d.Type != "postgres" && d.Type != "mysql" && d.Type != "valkey" {
-				continue
+			if d.Type == "postgres" || d.Type == "mysql" || d.Type == "valkey" {
+				all = append(all, d)
+				org[d.ID] = t.Name
 			}
-			access := "public"
-			if a, _ := d.Spec["access"].(string); a == "private" {
-				access = "private"
-			} else if ips, _ := d.Spec["trusted_ips"].([]any); len(ips) > 0 {
-				access = fmt.Sprintf("trusted IPs (%d)", len(ips))
-			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", d.ID, d.Name, engineName(d.Type), d.Status, access, t.Name)
 		}
 	}
-	return w.Flush()
+	return all, org, nil
+}
+
+// resolve turns a database's name into its id; an id is returned as it is.
+func resolve(c *api.Client, ref string) (string, error) {
+	all, _, err := databases(c)
+	if err != nil {
+		return "", err
+	}
+	var hits []string
+	for _, d := range all {
+		if d.ID == ref {
+			return ref, nil
+		}
+		if d.Name == ref && d.Status != "deleted" {
+			hits = append(hits, d.ID)
+		}
+	}
+	switch len(hits) {
+	case 1:
+		return hits[0], nil
+	case 0:
+		return "", fmt.Errorf("no database or cache named %q (plexivo db list)", ref)
+	default:
+		return "", fmt.Errorf("%d databases are named %q: use its id (plexivo db list)", len(hits), ref)
+	}
 }
 
 func engineName(t string) string {
@@ -190,10 +229,13 @@ func dbConnect(args []string) error {
 		id = fs.Arg(0)
 	}
 	if id == "" {
-		return errors.New("usage: plexivo db connect <id> [--port N]  (ids: plexivo db list)")
+		return errors.New("usage: plexivo db connect <name|id> [--port N]  (plexivo db list)")
 	}
 	c, err := api.Load()
 	if err != nil {
+		return err
+	}
+	if id, err = resolve(c, id); err != nil {
 		return err
 	}
 	grant, err := c.NewTunnel(id)
