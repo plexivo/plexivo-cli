@@ -14,13 +14,32 @@ Windows: download `plexivo-windows-amd64.zip` from the [latest release](https://
 
 ## Sign in
 
-Create an API key in the console (**Settings → API keys**), then:
+Sign in through your browser, the way `gcloud auth login` works:
 
 ```sh
-plexivo login
+plexivo auth login
 ```
 
-The key is stored in your user configuration directory, readable only by you. `PLEXIVO_TOKEN` overrides it, for CI.
+The CLI shows a short code and opens the console. Check that the code matches, choose the organisation and what the session may do, and approve:
+
+| Access | What the session may do |
+| --- | --- |
+| Read only | See resources, logs and settings. Changes nothing. |
+| Operate | Create and change resources and open database tunnels. No deletes, no billing. |
+| Full | Everything you can do in that organisation, including deletes. |
+
+A session never has more access than your own role, or than the organisation allows. It ends on its own after the organisation's session length (1, 4, 8, 12 or 24 hours, 8 by default; set it in **Settings → CLI sessions**), and the CLI then asks you to sign in again.
+
+```sh
+plexivo auth status     # organisation, access and the time left
+plexivo auth logout     # end the session now
+```
+
+You can also see and end every CLI session in **Settings → CLI sessions**.
+
+On a server without a browser, run `plexivo auth login --no-browser` and open the link on your phone or laptop.
+
+For CI and automation, create an API key in the console (**Settings → API keys**) and set `PLEXIVO_TOKEN`, or store one with `plexivo auth login --api-key`. The stored sign-in lives in your user configuration directory, readable only by you.
 
 ## Connect to a database
 

@@ -17,5 +17,6 @@ cp scripts/install.sh $out/install.sh
 (cd $out && shasum -a 256 *.tar.gz *.zip install.sh > SHA256SUMS)
 git tag -a "$tag" -m "Plexivo CLI $tag" 2>/dev/null || true
 git push origin "$tag"
-gh release create "$tag" --title "Plexivo CLI $tag" --notes "Connect to your Plexivo databases and caches through an encrypted tunnel: \`plexivo db connect <name>\`." \
+notes=${RELEASE_NOTES:-"Connect to your Plexivo databases and caches through an encrypted tunnel: \`plexivo db connect <name>\`."}
+gh release create "$tag" --title "Plexivo CLI $tag" --notes "$notes" \
   $out/*.tar.gz $out/*.zip $out/install.sh $out/SHA256SUMS

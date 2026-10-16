@@ -17,17 +17,37 @@ import (
 // DefaultURL is the Platform API; PLEXIVO_API_URL overrides it.
 const DefaultURL = "https://api.plexivo.io"
 
-// Client calls the API with one API key.
+// Client calls the API with one token: a browser sign-in session or an API key.
 type Client struct {
-	URL   string
-	Token string
-	HTTP  *http.Client
+	URL     string
+	Token   string
+	HTTP    *http.Client
+	Session bool
 }
 
-// Config is what `plexivo login` stores (~/.config/plexivo/config.json, 0600).
+// Config is what `plexivo auth login` stores (~/.config/plexivo/config.json,
+// 0600). A browser sign-in is a session with an expiry, an organisation and an
+// access level; an API key (for CI) has none of them.
 type Config struct {
-	Token string `json:"token"`
-	URL   string `json:"url,omitempty"`
+	Token        string    `json:"token"`
+	URL          string    `json:"url,omitempty"`
+	Kind         string    `json:"kind,omitempty"` // "session" or "api_key"
+	ExpiresAt    time.Time `json:"expires_at,omitempty"`
+	Organisation string    `json:"organisation,omitempty"`
+	Access       string    `json:"access,omitempty"`
+}
+
+// ErrSessionExpired is what every command says once a sign-in has lapsed.
+var ErrSessionExpired = errors.New("your Plexivo session has expired: run `plexivo auth login` to sign in again")
+
+// Read returns the stored login, without the environment overrides.
+func Read() (Config, error) {
+	var cfg Config
+	b, err := os.ReadFile(ConfigPath())
+	if err != nil {
+		return cfg, err
+	}
+	return cfg, json.Unmarshal(b, &cfg)
 }
 
 // ConfigPath is where the CLI keeps its login.
@@ -55,9 +75,13 @@ func Load() (*Client, error) {
 		cfg.URL = DefaultURL
 	}
 	if cfg.Token == "" {
-		return nil, errors.New("not logged in: run `plexivo login` or set PLEXIVO_TOKEN")
+		return nil, errors.New("not signed in: run `plexivo auth login` (or set PLEXIVO_TOKEN for CI)")
 	}
-	return &Client{URL: strings.TrimSuffix(cfg.URL, "/"), Token: cfg.Token, HTTP: &http.Client{Timeout: 30 * time.Second}}, nil
+	session := cfg.Kind == "session" && os.Getenv("PLEXIVO_TOKEN") == ""
+	if session && !cfg.ExpiresAt.IsZero() && time.Now().After(cfg.ExpiresAt) {
+		return nil, ErrSessionExpired
+	}
+	return &Client{URL: strings.TrimSuffix(cfg.URL, "/"), Token: cfg.Token, HTTP: &http.Client{Timeout: 30 * time.Second}, Session: session}, nil
 }
 
 // Save stores a login with owner-only permissions.
@@ -93,6 +117,9 @@ func (c *Client) Do(method, path string, body, out any) error {
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if resp.StatusCode == http.StatusUnauthorized && c.Session {
+		return ErrSessionExpired
+	}
 	if resp.StatusCode >= 300 {
 		var e struct {
 			Error struct {
