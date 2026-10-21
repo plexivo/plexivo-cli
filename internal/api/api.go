@@ -86,12 +86,54 @@ func Load() (*Client, error) {
 
 // Save stores a login with owner-only permissions.
 func Save(cfg Config) error {
-	p := ConfigPath()
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+	return saveAt(ConfigPath(), cfg)
+}
+
+func saveAt(p string, cfg Config) error {
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	b, _ := json.MarshalIndent(cfg, "", "  ")
-	return os.WriteFile(p, b, 0o600)
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("login directory must be a real directory")
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(p); err == nil {
+		if !info.Mode().IsRegular() {
+			return errors.New("login file must be a regular file")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	// WriteFile's mode only applies when creating a file. A private temporary
+	// file and rename also repair a pre-existing file with broader permissions,
+	// and a failed write cannot truncate the previous working login.
+	f, err := os.CreateTemp(dir, ".login-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+	if _, err := f.Write(b); err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), p)
 }
 
 // Do sends a request and decodes the JSON answer into out (when not nil).
