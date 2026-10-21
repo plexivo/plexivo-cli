@@ -43,12 +43,16 @@ For CI and automation, create an API key in the console (**Settings → API keys
 
 ## Connect to a database
 
+Quickstart: create a Plexivo Postgres database in the console and wait until it is running. Sign in above with **Operate** access, then list the resources and connect using the exact resource name:
+
 ```sh
 plexivo db list
 plexivo db connect orders-db
 ```
 
-`plexivo db connect` opens a local port — 5432 for Postgres, 3306 for MySQL, 6380 for Cache, or a free one — and prints the connection string to use with it. Point `psql`, TablePlus, DBeaver, MySQL Workbench or `redis-cli` at it. The tunnel works whether the database is public, limited to trusted networks, or private, and lasts while the command runs (`Ctrl-C` closes it). Every tunnel is recorded in your organisation's activity log.
+`plexivo db connect` opens a local port — 5432 for Postgres, 6380 for Cache, or a free one — and prints the connection details. Keep it running and use `psql`, TablePlus or DBeaver in a second terminal. Supply the database password securely from the console when your client prompts for it, rather than putting it in shell history. The tunnel works whether the database is public, limited to trusted networks, or private, and lasts while the command runs (`Ctrl-C` closes it). Every tunnel is recorded in your organisation's activity log.
+
+Confirm the connection with `SELECT current_database(), current_user;`. When finished, close the tunnel with `Ctrl-C` and run `plexivo auth logout` on a shared machine. This administrative tunnel requires the Plexivo control plane; use the resource's verified-TLS direct endpoint with a persistent connection pool for application traffic.
 
 Options: `--port N` to choose the local port, `--bind ADDR` to listen on another address, `--show-password` to print the password in the connection string.
 
