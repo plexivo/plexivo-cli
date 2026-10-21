@@ -2,6 +2,9 @@
 # Builds every platform's binary and publishes a GitHub release.
 #   scripts/release.sh v0.1.0
 set -euo pipefail
+# Refuse hidden toolchain downloads. The go.mod floor rejects an older local
+# compiler; release evidence must identify the compiler that built each binary.
+export GOTOOLCHAIN=local
 tag=${1:?usage: release.sh <vX.Y.Z>}
 cd "$(dirname "$0")/.."
 [[ -z $(git status --porcelain) ]] || { echo "commit first" >&2; exit 2; }
