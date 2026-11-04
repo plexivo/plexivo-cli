@@ -1,6 +1,6 @@
 package main
 
-// plexivo k8s: kubectl access to Plexivo Kubernetes, like
+// plexivo k8s: kubectl access to Plexivo Containers for Kubernetes, like
 // `gcloud container clusters get-credentials`. `credentials` adds one
 // context (plexivo-<name>) to the kubeconfig kubectl already uses, through
 // `kubectl config`, so no other context is touched. kubectl then asks

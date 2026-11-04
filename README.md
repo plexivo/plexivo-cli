@@ -56,7 +56,7 @@ Confirm the connection with `SELECT current_database(), current_user;`. When fin
 
 Options: `--port N` to choose the local port, `--bind ADDR` to listen on another address, `--show-password` to print the password in the connection string.
 
-## Use kubectl with Plexivo Kubernetes
+## Use kubectl with Plexivo Containers for Kubernetes
 
 ```sh
 plexivo k8s list                     # your workloads
