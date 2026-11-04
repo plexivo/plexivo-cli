@@ -5,6 +5,8 @@
 //	plexivo auth logout           end the session
 //	plexivo db list               your databases and caches
 //	plexivo db connect <name|id>  a local port to a database, private or public
+//	plexivo k8s list              your Kubernetes workloads
+//	plexivo k8s credentials <name|id>  a kubectl context that refreshes itself
 //	plexivo version
 package main
 
@@ -74,6 +76,8 @@ func run(args []string) error {
 		case "connect":
 			return dbConnect(args[2:])
 		}
+	case "k8s", "kubernetes":
+		return k8sCmd(args[1:])
 	case "help", "--help", "-h":
 		usage()
 		return nil
@@ -93,6 +97,12 @@ func usage() {
   plexivo db list               your databases and caches
   plexivo db connect <name|id>  open a local port to a database or cache,
                                 even a private one: --port N to choose the port
+  plexivo k8s list              your Kubernetes workloads
+  plexivo k8s credentials <name|id>
+                                add a plexivo-<name> context to your kubeconfig
+                                (other contexts untouched) and switch to it;
+                                tokens refresh by themselves (--keep-current to
+                                add it without switching)
   plexivo version
 
 PLEXIVO_TOKEN and PLEXIVO_API_URL override the stored sign-in.

@@ -56,6 +56,26 @@ Confirm the connection with `SELECT current_database(), current_user;`. When fin
 
 Options: `--port N` to choose the local port, `--bind ADDR` to listen on another address, `--show-password` to print the password in the connection string.
 
+## Use kubectl with Plexivo Kubernetes
+
+```sh
+plexivo k8s list                     # your workloads
+plexivo k8s credentials my-app       # add a plexivo-my-app context and switch to it
+kubectl get pods
+```
+
+`credentials` adds one context, `plexivo-<name>`, to the kubeconfig kubectl
+already uses (through `kubectl config`), so your other contexts stay exactly as
+they were. Add `--keep-current` to add it without switching. kubectl asks the
+CLI for a short-lived token when it needs one, so access keeps working without
+copying a new kubeconfig, as long as you stay signed in (`plexivo auth login`).
+Each token works only in your workload's namespace, with your own permissions.
+
+Not available yet through Plexivo's managed Kubernetes API: `kubectl exec`,
+`attach`, `port-forward`, `proxy`, and streaming (`logs -f`, `--watch`,
+`rollout status`). Use `kubectl logs` without `-f`, `kubectl get` to check
+progress, and the console's logs and status pages.
+
 ## Licence
 
 Apache 2.0
